@@ -1,6 +1,19 @@
 from flask import Flask, abort, request
 from src.db import engine, User
+from os import getenv
+import redis
+import json
 from sqlalchemy.orm import Session
+import logging
+
+r = redis.Redis(host=getenv("REDIS_HOST"), port=6379, db=0)
+
+def get_cached(key):
+    data = r.get(key)
+    if data:
+        return json.loads(data)
+    else:
+        return False
 
 app = Flask(__name__)
 
@@ -14,11 +27,19 @@ def get_users():
     """
     Возвращает список всех пользователей.
     """
+    key = "users:all"
+    cache = get_cached(key)
+
+    if cache:
+        return cache
+
     with Session(bind=engine) as s:
         users = s.query(User).all()
 
         users_list = [{"id": u.id, "username": u.username, "description": u.description} for u in users]
     
+    r.setex(key, 300, json.dumps(users_list))
+
     return users_list
 
 @app.route('/users/<username>', methods=["GET"])
@@ -26,13 +47,23 @@ def get_user(username: str):
     """
     Возвращает информацию о конкретном пользователе.
     """
+    key = f"users:{username}"
+    cache = get_cached(key)
+
+    if cache:
+        return cache
+
     with Session(bind=engine, expire_on_commit=False) as s:
         user = s.query(User).filter_by(username=username).first()
 
         if not user:
             abort(404)
+
+    data = {"id": user.id, "username": user.username, "description": user.description}
+
+    r.setex(key, 300, json.dumps(data))
     
-    return {"id": user.id, "username": user.username, "description": user.description}
+    return data
 
 @app.route('/users', methods=["POST"])
 def add_user():
