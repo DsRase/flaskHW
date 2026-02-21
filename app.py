@@ -26,13 +26,13 @@ def get_user(username: str):
     """
     Возвращает информацию о конкретном пользователе.
     """
-    with Session(bind=engine) as s:
+    with Session(bind=engine, expire_on_commit=False) as s:
         user = s.query(User).filter_by(username=username).first()
 
         if not user:
             abort(404)
     
-    return user
+    return {"id": user.id, "username": user.username, "description": user.description}
 
 @app.route('/users', methods=["POST"])
 def add_user():
@@ -47,13 +47,18 @@ def add_user():
     if not user_data or not username or not description:
         abort(400)
 
-    with Session(bind=engine) as s:
+    with Session(bind=engine, expire_on_commit=False) as s:
+        old_user = s.query(User).filter_by(username=username).first()
+
+        if old_user:
+            abort(400) # user is already here
+
         user = User(username=username, description=description)
 
         s.add(user)
         s.commit()
     
-    return user
+    return {"id": user.id, "username": user.username, "description": user.description}
 
 @app.route('/users', methods=["PUT"])
 def update_user():
@@ -69,8 +74,8 @@ def update_user():
     if not user_data or not user_id or not username or not description:
         abort(400)
 
-    with Session(bind=engine) as s:
-        user = s.query.get(user_id)
+    with Session(bind=engine, expire_on_commit=False) as s:
+        user = s.query(User).get(user_id)
 
         if not user:
             abort(404)
@@ -80,7 +85,7 @@ def update_user():
 
         s.commit()
     
-    return user
+    return {"id": user.id, "username": user.username, "description": user.description}
 
 @app.route('/users/<username>', methods=["DELETE"])
 def delete_user(username):
@@ -96,4 +101,4 @@ def delete_user(username):
         s.delete(user)
         s.commit()
     
-    return user
+    return {"status": "ok"}
