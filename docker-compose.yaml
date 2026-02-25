@@ -61,13 +61,13 @@ services:
 
   nginx_exporter:
     image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx_exporter
     command:
       - -nginx.scrape-uri=http://nginx/stab_status
     ports:
       - "9113:9113"
     depends_on:
       - nginx
-
 
   prometheus:
     image: prom/prometheus:latest
