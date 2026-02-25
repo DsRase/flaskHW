@@ -31,6 +31,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  
+  postgres_exporter:
+    image: wrouesnel/postgres_exporter:latest
+    container_name: postgres_exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}?sslmode=disable"
+    ports:
+    - "9187:9187"
+    restart: unless-stopped
+    depends_on:
+    - db
 
   cache:
     image: redis
@@ -47,6 +58,16 @@ services:
     depends_on:
       - app
     restart: unless-stopped
+
+  nginx_exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    command:
+      - -nginx.scrape-uri=http://nginx/stab_status
+    ports:
+      - "9113:9113"
+    depends_on:
+      - nginx
+
 
   prometheus:
     image: prom/prometheus:latest
@@ -79,9 +100,12 @@ services:
     ports:
       - "3000:3000"
     volumes:
+      - ./prometheus/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
       - grafana_data:/var/lib/grafana
     environment:
+      - GF_SECURITY_ADMIN_USER=${GF_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GF_PASS}
+      - GF_SECURITY_ADMIN_PASSWORD__RESET=true
 
 volumes:
   postgres_data:

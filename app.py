@@ -1,10 +1,12 @@
-from flask import Flask, abort, request
+from flask import Flask, abort, request, Response
 from src.db import engine, User
 from os import getenv
 import redis
 import json
 from sqlalchemy.orm import Session
 import logging
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from time import time
 
 r = redis.Redis(host=getenv("REDIS_HOST"), port=6379, db=0)
 
@@ -16,6 +18,71 @@ def get_cached(key):
         return False
 
 app = Flask(__name__)
+
+# metric's objects
+http_requests_total = Counter(
+    'http_requests_total', 'Total HTTP requests',
+    ['method', 'endpoint', 'http_status']
+)
+
+http_4xx_requests_total = Coutner(
+    'http_4xx_requests_total', 'Total 4xx HTTP requests',
+    ['method', 'endpoint', 'http_status']
+)
+
+http_5xx_requests_total = Coutner(
+    'http_5xx_requests_total', 'Total 5xx HTTP requests',
+    ['method', 'endpoint', 'http_status']
+)
+
+http_request_duration_seconds = Histogram(
+    'http_request_duration_seconds', 'HTTP request latency in seconds',
+    ['endpoint']
+)
+
+class GetMetricsMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        method = environ.get('REQUEST_METHOD')
+        endpoint = environ.get('PATH_INFO')
+        status_code = None
+
+        def custom_start_response(status, headers, exc_info=None):
+            nonlocal status_code
+            status_code = status.split()[0]
+            return start_response(status, headers, exc_info)
+
+        request_time = time()
+        response = self.app(environ, start_response)
+        request_time = time() - request_time
+
+        http_request_duration_seconds.labels(endpoint).observe(duration)
+
+        http_requests_total.labels(
+            method,
+            endpoint,
+            status_code
+        ).inc()
+
+        match status_code[0]:
+            case '4':
+                http_4xx_requests_total.labels(
+                    method,
+                    endpoint,
+                    status_code
+                ).inc()
+            case '5':
+                http_5xx_requests_total.labels(
+                    method,
+                    endpoint,
+                    status_code
+                ).inc()
+
+        return response
+
+app.wsgi_app = GetMetricsMiddleware(app.wsgi_app)
 
 @app.route('/health')
 def health_check():
@@ -133,3 +200,7 @@ def delete_user(username):
         s.commit()
     
     return {"status": "ok"}
+
+@app.route('/metrics')
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
