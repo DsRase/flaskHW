@@ -78,6 +78,15 @@
       loop:
         - argocd/
         - playbook.yaml
+    
+    - name: Copy DB infrastructure
+      copy:
+        src: "{{ item }}"
+        dest: /tmp/
+      loop:
+        - flaskhw/flaskhw-postgres-statefulset.yaml
+        - flaskhw/flaskhw-redis.yaml
+        - flaskhw/flaskhw-configmap.yaml
 
     - name: Fix Minikube kubectl context
       shell: minikube update-context
@@ -90,6 +99,29 @@
         chmod 700 get_helm.sh
         ./get_helm.sh
       become: true
+    
+    - name: Deploy Postgres + Redis (docker-compose → K8s)
+      shell: |
+        kubectl apply -f /tmp/flaskhw-postgres-statefulset.yaml
+        kubectl apply -f /tmp/flaskhw-redis.yaml
+        kubectl apply -f /tmp/flaskhw-configmap.yaml
+      environment:
+        KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+
+    - name: Wait for DB ready
+      shell: kubectl wait --for=condition=ready pod -l app=postgres -n flaskhw --timeout=120s
+      environment:
+        KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+
+    - name: Link ConfigMap to Flask
+      shell: kubectl set env deployment/flaskhw --from=configmap/flaskhw-config -n flaskhw
+      environment:
+        KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+
+    # - name: Restart Flask
+    #   shell: kubectl rollout restart deployment/flaskhw -n flaskhw
+    #   environment:
+    #     KUBECONFIG: /home/{{ ansible_user }}/.kube/config
 
     - name: Create flaskhw namespace
       shell: kubectl create namespace flaskhw || true

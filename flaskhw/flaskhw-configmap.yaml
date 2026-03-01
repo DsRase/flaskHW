@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flaskhw-config
+  namespace: flaskhw
+data:
+  DB_HOST: "postgres"
+  DB_NAME: "database"
+  DB_USER: "tracebacker"
+  DB_PASS: "tracebacker"
+  REDIS_HOST: "cache"
