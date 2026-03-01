@@ -64,39 +64,55 @@
         sudo -u {{ ansible_user }} minikube start --driver=docker
       become: true
 
-    - name: Copy project files
+    - name: Copy flaskhw directory (для Helm)
+      copy:
+        src: flaskhw/
+        dest: /tmp/flaskhw/
+        mode: preserve      
+
+    - name: Copy config files
       copy:
         src: "{{ item }}"
         dest: /tmp/
         mode: '0755'
       loop:
-        - flaskhw/
         - argocd/
         - playbook.yaml
-    
+
     - name: Fix Minikube kubectl context
       shell: minikube update-context
       become: false
       become_user: "{{ ansible_user }}"
 
-    - name: Copy ArgoCD app (CORRECT path)
-      copy:
-        src: argocd/flaskhw-app.yaml
-        dest: /tmp/argocd-app.yaml  # ← правильный путь
-        mode: '0644'
+    - name: Install Helm
+      shell: |
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+      become: true
 
-    - name: Create argocd namespace
-      shell: kubectl create namespace argocd || true
+    - name: Create flaskhw namespace
+      shell: kubectl create namespace flaskhw || true
       environment:
         KUBECONFIG: /home/{{ ansible_user }}/.kube/config
 
-    - name: Install ArgoCD (kubectl NOT minikube kubectl)
-      shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false || true
+    - name: Deploy Flask via Helm (clean install)
+      shell: |
+        helm uninstall flaskhw -n flaskhw || true
+        helm install flaskhw /tmp/flaskhw --namespace flaskhw
       environment:
         KUBECONFIG: /home/{{ ansible_user }}/.kube/config
-      ignore_errors: true
 
-    - name: Deploy Flask via ArgoCD (пункт 6!)
-      shell: kubectl apply -n argocd -f /tmp/argocd-app.yaml --validate=false
+    - name: Wait for Flask deployment ready
+      shell: kubectl rollout status deployment/flaskhw -n flaskhw --timeout=300s
       environment:
         KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+
+    - name: Show Flask service URL
+      shell: minikube service flaskhw-service --url -n flaskhw
+      become_user: "{{ ansible_user }}"
+      register: service_url
+
+    - name: FINAL SUCCESS
+      debug:
+        msg: "Link: {{ service_url.stdout }}"
