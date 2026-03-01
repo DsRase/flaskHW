@@ -1,0 +1,17 @@
+replicaCount: 2
+
+image:
+  repository: 48342255325/flaskhw
+  tag: latest
+
+service:
+  type: NodePort
+  nodePort: 30080
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "100m"
+  limits:
+    memory: "128Mi"
+    cpu: "200m"

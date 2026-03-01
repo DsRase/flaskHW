@@ -1,0 +1,102 @@
+---
+- hosts: vm
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - apt-transport-https
+        state: present
+
+    - name: Add Docker GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/docker-archive-keyring.gpg
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Install kubectl
+      shell: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        mv kubectl /usr/local/bin/
+      args:
+        creates: /usr/local/bin/kubectl
+
+    - name: Install Minikube
+      shell: |
+        curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        install minikube-linux-amd64 /usr/local/bin/minikube
+      args:
+        creates: /usr/local/bin/minikube
+
+    - name: Start Minikube
+      shell: |
+        sudo -u {{ ansible_user }} minikube start --driver=docker
+      become: true
+
+    - name: Copy project files
+      copy:
+        src: "{{ item }}"
+        dest: /tmp/
+        mode: '0755'
+      loop:
+        - flaskhw/
+        - argocd/
+        - playbook.yaml
+    
+    - name: Fix Minikube kubectl context
+      shell: minikube update-context
+      become: false
+      become_user: "{{ ansible_user }}"
+
+    - name: Copy ArgoCD app (CORRECT path)
+      copy:
+        src: argocd/flaskhw-app.yaml
+        dest: /tmp/argocd-app.yaml  # ← правильный путь
+        mode: '0644'
+
+    - name: Create argocd namespace
+      shell: kubectl create namespace argocd || true
+      environment:
+        KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+
+    - name: Install ArgoCD (kubectl NOT minikube kubectl)
+      shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --validate=false || true
+      environment:
+        KUBECONFIG: /home/{{ ansible_user }}/.kube/config
+      ignore_errors: true
+
+    - name: Deploy Flask via ArgoCD (пункт 6!)
+      shell: kubectl apply -n argocd -f /tmp/argocd-app.yaml --validate=false
+      environment:
+        KUBECONFIG: /home/{{ ansible_user }}/.kube/config
