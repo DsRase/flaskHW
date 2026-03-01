@@ -1,11 +1,28 @@
-FROM python:3.13.12-alpine3.22
+FROM python:3.11-slim
 
 WORKDIR /app
 
+COPY requirements.txt .
+
+RUN apt-get update && apt-get install -y \
+    nginx \
+    gcc \
+    g++ \
+    python3-dev \
+    build-essential \
+    libc6-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install -r requirements.txt uwsgi
+
 COPY . .
 
-RUN pip install --no-cache-dir -r requirements.txt
+COPY uwsgi.ini /etc/uwsgi.ini
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
 
-EXPOSE 8000
+RUN mkdir -p /tmp && chown www-data:www-data /tmp
 
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "app:app"]
+CMD ["sh", "-c", "service nginx start && uwsgi --ini /etc/uwsgi.ini"]

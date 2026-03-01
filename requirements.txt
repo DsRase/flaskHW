@@ -7,8 +7,11 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 packaging==26.0
+prometheus_client==0.24.1
+prometheus_flask_exporter==0.23.2
 psycopg2-binary==2.9.11
 redis==7.2.0
 SQLAlchemy==2.0.46
 typing_extensions==4.15.0
+uWSGI==2.0.31
 Werkzeug==3.1.6
